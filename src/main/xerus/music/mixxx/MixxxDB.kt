@@ -1,34 +1,77 @@
 package xerus.music.mixxx
 
+import xerus.music.mixxx.MixxxDB.connect
+import xerus.music.mixxx.data.*
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.ResultSet
 
+/**
+ * An object to conveniently and typesafely access the mixxxdb.
+ *
+ * Call [connect] before doing anything else, it will also return you a [Connection] instance
+ * in case you want to query the database directly.
+ */
 object MixxxDB {
-	
 	private lateinit var db: Connection
-	fun connect(path: String = File(System.getProperty("user.home"), ".mixxx").resolve("mixxxdb.sqlite").toString()) {
+	
+	/** The estimated size of the library. Will be used to construct ArrayLists with an initial capacity to reduce garbage */
+	var estimatedLibrarySize = 2048
+	
+	fun connect(path: String = File(System.getProperty("user.home"), ".mixxx").resolve("mixxxdb.sqlite").toString()): Connection {
 		db = DriverManager.getConnection("jdbc:sqlite:$path")
+		return db
 	}
 	
-	fun query(query: String): ResultSet {
-		val statement = db.createStatement()
-		return statement.executeQuery(query)
-	}
+	fun query(query: String): ResultSet = db.createStatement().executeQuery(query)
 	
-	fun <T> readTable(table: String, estimatedSize: Int = 2000, converter: ResultSet.() -> T): List<T> {
-		val results = query("SELECT * FROM $table")
+	fun update(query: String) = db.createStatement().executeUpdate(query)
+	
+	fun <T> readTable(table: String, estimatedSize: Int = 64, converter: ResultSet.() -> T): List<T> {
 		val list = ArrayList<T>(estimatedSize)
-		while (results.next())
-			list.add(converter(results))
+		query("SELECT * FROM $table").forEach { list.add(converter(this)) }
 		return list
 	}
 	
-	fun getLibrary(): List<Song> =
-		readTable("library") {
-			Song(
-				getInt("id"),
+	fun getCues() = readTable("cues", estimatedLibrarySize * 2) {
+		Cue(
+			getLong("id"),
+			getLong("track_id"),
+			getLong("type"),
+			getLong("position"),
+			getLong("length"),
+			getLong("hotcue"),
+			getString("label"),
+			getLong("color")
+		)
+	}
+	
+	fun getCrates() = readTable("crates") {
+		Crate(
+			getLong("id"),
+			getString("name"),
+			getLong("count"),
+			getLong("show"),
+			getLong("locked"),
+			getLong("autodj_source")
+		)
+	}
+	
+	/** Returns a map where the index is the [Track.id] and the value is the [Crate.id] */
+	fun getCrateTracks() = query("SELECT * FROM crate_tracks").asIterable().associate {
+		Pair(
+			it.getLong("track_id"),
+			it.getLong("crate_id")
+		)
+	}
+	
+	fun getDirectories() = readTable("directories") { getString("directory") }
+	
+	fun getLibrary(): List<Track> =
+		readTable("library", estimatedLibrarySize) {
+			Track(
+				getLong("id"),
 				getString("artist"),
 				getString("title"),
 				getString("album"),
@@ -71,71 +114,75 @@ object MixxxDB {
 			)
 		}
 	
-	fun getCues() = readTable("cues") {
-		Cue(
+	fun getLibraryHashes() = readTable("library_hashes", estimatedLibrarySize) {
+		LibraryHash(
+			getString("directory_path"),
+			getLong("hash"),
+			getLong("directory_deleted"),
+			getLong("needs_verification")
+		)
+	}
+	
+	fun getPlaylists() = readTable("playlists") {
+		Playlist(
 			getLong("id"),
-			getLong("track_id"),
-			getLong("type"),
+			getString("name"),
 			getLong("position"),
-			getLong("length"),
-			getLong("hotcue"),
-			getString("label"),
-			getLong("color")
+			getLong("hidden"),
+			getTimestamp("date_created"),
+			getTimestamp("date_modified"),
+			getLong("locked")
+		)
+	}
+	
+	fun getPlaylistTracks() = readTable("playlist_tracks", estimatedLibrarySize) {
+		PlaylistTrack(
+			getLong("id"),
+			getLong("playlist_id"),
+			getLong("track_id"),
+			getLong("position"),
+			getString("pl_datetime_added")
+		)
+	}
+	
+	fun getTrackLocations() = readTable("track_locations", estimatedLibrarySize) {
+		TrackLocation(
+			getLong("id"),
+			getString("location"),
+			getString("filename"),
+			getString("directory"),
+			getLong("filesize"),
+			getLong("fs_deleted"),
+			getLong("needs_verification")
 		)
 	}
 	
 }
 
-data class Song(
-	val id: Int,
-	val artist: String?,
-	val title: String?,
-	val album: String?,
-	val year: String?,
-	val genre: String?,
-	val tracknumber: String?,
-	val location: Long,
-	val comment: String?,
-	val url: String?,
-	val duration: Long,
-	val bitrate: Long,
-	val samplerate: Long,
-	val cuepoint: Long,
-	val bpm: Double,
-	val channels: Long,
-	val datetimeAdded: String?,
-	val mixxx_deleted: Boolean,
-	val played: Long,
-	val headerParsed: Long,
-	val filetype: String?,
-	val replaygain: Double,
-	val timesplayed: Long,
-	val rating: Long,
-	val key: String?,
-	val beatsVersion: String?,
-	val composer: String?,
-	val bpmLock: Long,
-	val beatsSubVersion: String?,
-	val keysVersion: String?,
-	val keysSubVersion: String?,
-	val keyId: String?,
-	val grouping: String?,
-	val albumArtist: String?,
-	val coverartSource: Long,
-	val coverartType: Long,
-	val coverartLocation: String?,
-	val coverartHash: Long,
-	val replaygainPeak: Double,
-	val tracktotal: String?
-)
+inline fun ResultSet.forEach(function: ResultSet.() -> Unit) {
+	while (next())
+		function(this)
+}
 
-data class Cue(
-	val id: Long,
-	val trackId: Long,
-	val type: Long,
-	val position: Long,
-	val length: Long,
-	val hotcue: Long,
-	val label: String?,
-	val color: Long
-)
+fun ResultSet.asIterable() =
+	Iterable {
+		object : Iterator<ResultSet> {
+			var advanced = false
+			var hasNext = true
+			override fun hasNext(): Boolean {
+				if (!advanced) {
+					hasNext = this@asIterable.next()
+					advanced = true
+				}
+				return hasNext
+			}
+			
+			override fun next(): ResultSet {
+				if (!advanced)
+					this@asIterable.next()
+				advanced = false
+				return this@asIterable
+			}
+			
+		}
+	}
