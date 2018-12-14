@@ -16,6 +16,9 @@ sourceSets {
 
 dependencies {
 	compile(rootProject)
+	compile("ch.qos.logback", "logback-classic", "1.2.3")
+	compile("io.github.microutils", "kotlin-logging", "1.6.22")
+	
 }
 
 application {
