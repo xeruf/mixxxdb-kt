@@ -28,13 +28,17 @@ object MixxxDB {
 	
 	fun update(query: String) = db.createStatement().executeUpdate(query)
 	
-	fun <T> readTable(table: String, estimatedSize: Int = 64, converter: ResultSet.() -> T): List<T> {
+	fun update(table: String, update: String, condition: String) = update("UPDATE $table set $update WHERE $condition")
+	
+	fun deleteFrom(table: String, condition: String) = update("DELETE FROM $table WHERE $condition")
+	
+	fun <T> readTable(table: String, filter: String?, estimatedSize: Int = 64, converter: ResultSet.() -> T): List<T> {
 		val list = ArrayList<T>(estimatedSize)
-		query("SELECT * FROM $table").forEach { list.add(converter(this)) }
+		query("SELECT * FROM $table${filter?.let { " WHERE $it" } ?: ""}").forEach { list.add(converter(this)) }
 		return list
 	}
 	
-	fun getCues() = readTable("cues", estimatedLibrarySize * 2) {
+	fun getCues(filter: String? = null) = readTable("cues", filter, estimatedLibrarySize * 2) {
 		Cue(
 			getLong("id"),
 			getLong("track_id"),
@@ -47,7 +51,7 @@ object MixxxDB {
 		)
 	}
 	
-	fun getCrates() = readTable("crates") {
+	fun getCrates(filter: String? = null) = readTable("crates", filter) {
 		Crate(
 			getLong("id"),
 			getString("name"),
@@ -59,17 +63,16 @@ object MixxxDB {
 	}
 	
 	/** Returns a map where the index is the [Track.id] and the value is the [Crate.id] */
-	fun getCrateTracks() = query("SELECT * FROM crate_tracks").asIterable().associate {
+	fun getCrateTracks(filter: String? = null) = query("SELECT * FROM crate_tracks${filter?.let { " WHERE $it" } ?: ""}").asIterable().associate {
 		Pair(
 			it.getLong("track_id"),
 			it.getLong("crate_id")
 		)
 	}
 	
-	fun getDirectories() = readTable("directories") { getString("directory") }
+	fun getDirectories(filter: String? = null) = readTable("directories", filter) { getString("directory") }
 	
-	fun getLibrary(): List<Track> =
-		readTable("library", estimatedLibrarySize) {
+	fun getLibrary(filter: String? = null) = readTable("library", filter, estimatedLibrarySize) {
 			Track(
 				getLong("id"),
 				getString("artist"),
@@ -114,7 +117,7 @@ object MixxxDB {
 			)
 		}
 	
-	fun getLibraryHashes() = readTable("library_hashes", estimatedLibrarySize) {
+	fun getLibraryHashes(filter: String? = null) = readTable("library_hashes", filter, estimatedLibrarySize) {
 		LibraryHash(
 			getString("directory_path"),
 			getLong("hash"),
@@ -123,7 +126,7 @@ object MixxxDB {
 		)
 	}
 	
-	fun getPlaylists() = readTable("playlists") {
+	fun getPlaylists(filter: String? = null) = readTable("playlists", filter) {
 		Playlist(
 			getLong("id"),
 			getString("name"),
@@ -135,7 +138,7 @@ object MixxxDB {
 		)
 	}
 	
-	fun getPlaylistTracks() = readTable("playlist_tracks", estimatedLibrarySize) {
+	fun getPlaylistTracks(filter: String? = null) = readTable("playlist_tracks", filter, estimatedLibrarySize) {
 		PlaylistTrack(
 			getLong("id"),
 			getLong("playlist_id"),
@@ -145,7 +148,7 @@ object MixxxDB {
 		)
 	}
 	
-	fun getTrackLocations() = readTable("track_locations", estimatedLibrarySize) {
+	fun getTrackLocations(filter: String? = null) = readTable("track_locations", filter, estimatedLibrarySize) {
 		TrackLocation(
 			getLong("id"),
 			getString("location"),

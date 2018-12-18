@@ -10,6 +10,10 @@ allprojects {
 		jcenter()
 		maven("https://jitpack.io")
 	}
+	
+	tasks.withType<KotlinCompile> {
+		kotlinOptions.jvmTarget = "1.8"
+	}
 }
 
 sourceSets {
@@ -26,8 +30,4 @@ dependencies {
 	api("com.github.Xerus2000.util", "javafx", "master-SNAPSHOT")
 	
 	compile("org.xerial", "sqlite-jdbc", "3.25.2")
-}
-
-tasks.withType<KotlinCompile> {
-	kotlinOptions.jvmTarget = "1.8"
 }

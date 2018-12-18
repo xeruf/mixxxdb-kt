@@ -16,6 +16,7 @@ sourceSets {
 
 dependencies {
 	compile(rootProject)
+	compile("org.openjfx", "javafx-controls", "11.0.1")
 	compile("ch.qos.logback", "logback-classic", "1.2.3")
 	compile("io.github.microutils", "kotlin-logging", "1.6.22")
 	
