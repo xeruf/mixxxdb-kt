@@ -101,7 +101,7 @@ object MixxxDB {
 				getString("key"),
 				getString("beats_version"),
 				getString("composer"),
-				getLong("bpm_lock"),
+				getBoolean("bpm_lock"),
 				getString("beats_sub_version"),
 				getString("keys_version"),
 				getString("keys_sub_version"),

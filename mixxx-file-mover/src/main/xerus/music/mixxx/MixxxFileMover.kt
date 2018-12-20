@@ -49,12 +49,25 @@ object MixxxFileMover {
 		library.setAll(MixxxDB.getLibrary())
 		val locs = MixxxDB.getTrackLocations()
 		locTracks.setAll(locs.map { loc ->
+			var found = false
 			var cueAmount: Int? = null
+			var bpmLock: Boolean? = null
 			cues.forEach { track, cues ->
-				if(track.location == loc.id)
+				if(track.location == loc.id) {
+					found = true
 					cueAmount = cues.size
+					bpmLock = track.bpmLock
+				}
 			}
-			LocTrack(loc, cueAmount)
+			if(!found)
+				library.forEach { track ->
+					if(track.location == loc.id) {
+						found = true
+						cueAmount = 0
+						bpmLock = track.bpmLock
+					}
+				}
+			LocTrack(loc, cueAmount, bpmLock)
 		})
 	}
 	
@@ -66,6 +79,7 @@ object MixxxFileMover {
 			val locationTable = TableView(locTracks).filtered(locPredicate)
 			locationTable.columnsFromProperties { it.loc }
 			locationTable.columns.add(TableColumn<LocTrack, Int?>("Cues") { it.value.cues })
+			locationTable.columns.add(TableColumn<LocTrack, Boolean?>("BpmLock") { it.value.bpmLock })
 			
 			locationTable.contextMenu = ContextMenu(
 				MenuItem("Choose new location") {
@@ -208,7 +222,7 @@ object MixxxFileMover {
 	
 }
 
-data class LocTrack(val loc: TrackLocation, val cues: Int?) {
+data class LocTrack(val loc: TrackLocation, val cues: Int?, val bpmLock: Boolean?) {
 	val location = File(loc.location)
 }
 

@@ -28,7 +28,7 @@ data class Track(
 	val key: String?,
 	val beatsVersion: String?,
 	val composer: String?,
-	val bpmLock: Long,
+	val bpmLock: Boolean,
 	val beatsSubVersion: String?,
 	val keysVersion: String?,
 	val keysSubVersion: String?,
