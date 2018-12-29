@@ -1,13 +1,13 @@
 package xerus.music.mixxx.data
 
-import java.sql.Timestamp
+import java.util.*
 
 data class Playlist(
 	val id: Long,
 	val name: String?,
 	val position: Long,
 	val hidden: Long,
-	val dateCreated: Timestamp?,
-	val dateModified: Timestamp?,
+	val dateCreated: Date,
+	val dateModified: Date,
 	val locked: Long
 )

@@ -6,6 +6,9 @@ import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.ResultSet
+import java.text.SimpleDateFormat
+
+
 
 /**
  * An object to conveniently and typesafely access the mixxxdb.
@@ -117,7 +120,7 @@ object MixxxDB {
 			)
 		}
 	
-	fun getLibraryHashes(filter: String? = null) = readTable("library_hashes", filter, estimatedLibrarySize) {
+	fun getLibraryHashes(filter: String? = null) = readTable("LibraryHashes", filter, estimatedLibrarySize) {
 		LibraryHash(
 			getString("directory_path"),
 			getLong("hash"),
@@ -126,19 +129,20 @@ object MixxxDB {
 		)
 	}
 	
-	fun getPlaylists(filter: String? = null) = readTable("playlists", filter) {
+	var formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+	fun getPlaylists(filter: String? = null) = readTable("Playlists", filter) {
 		Playlist(
 			getLong("id"),
 			getString("name"),
 			getLong("position"),
 			getLong("hidden"),
-			getTimestamp("date_created"),
-			getTimestamp("date_modified"),
+			formatter.parse(getString("date_created")),
+			formatter.parse(getString("date_modified")),
 			getLong("locked")
 		)
 	}
 	
-	fun getPlaylistTracks(filter: String? = null) = readTable("playlist_tracks", filter, estimatedLibrarySize) {
+	fun getPlaylistTracks(filter: String? = null) = readTable("PlaylistTracks", filter, estimatedLibrarySize) {
 		PlaylistTrack(
 			getLong("id"),
 			getLong("playlist_id"),

@@ -11,6 +11,7 @@ import javafx.scene.layout.*
 import javafx.scene.paint.Paint
 import javafx.stage.FileChooser
 import mu.KotlinLogging
+import xerus.ktutil.collections.nullIfEmpty
 import xerus.ktutil.containsAny
 import xerus.ktutil.findFolder
 import xerus.ktutil.javafx.MenuItem

@@ -33,19 +33,25 @@ fun MixxxDB.cratesToTracks(): Map<Crate, List<Track>> {
 	return cratesToTracks
 }
 
-/** Returns a Map containing the id of all Playlists and the Tracks that belong to them in their correct order */
-fun MixxxDB.playlistIdsToTracks(): Map<Long, List<Track>> {
-	val tracks = getTracksIndexed()
+/** Returns a Map containing the id of all Playlists and the PlaylistTracks that belong to them */
+fun MixxxDB.playlistIdsToTrackIds(): Map<Long, List<PlaylistTrack>> {
 	val playlistTracks = getPlaylistTracks()
 	val playlists = getPlaylists()
 	val idsToList = HashMap<Long, ArrayList<PlaylistTrack>>(playlists.size)
 	playlists.forEach { crate -> idsToList[crate.id] = ArrayList() }
 	playlistTracks.forEach { playlistTrack ->
-		idsToList[playlistTrack.playlistId]!!.add(playlistTrack)
+		idsToList[playlistTrack.playlistId]?.add(playlistTrack)
 	}
-	val idsToListSorted = HashMap<Long, List<Track>>(playlists.size)
+	return idsToList
+}
+
+/** Returns a Map containing the id of all Playlists and the Tracks that belong to them in their correct order */
+fun MixxxDB.playlistIdsToTracks(): Map<Long, List<Track>> {
+	val tracks = getTracksIndexed()
+	val idsToList = playlistIdsToTrackIds()
+	val idsToListSorted = HashMap<Long, List<Track>>(idsToList.size)
 	idsToList.forEach { id, trackList ->
-		idsToListSorted[id] = trackList.sorted().map { tracks[it.trackId]!! }
+		idsToListSorted[id] = trackList.sorted().mapNotNull { tracks[it.trackId] }
 	}
 	return idsToListSorted
 }
