@@ -13,7 +13,8 @@ import javafx.scene.paint.Paint
 import javafx.stage.FileChooser
 import xerus.ktutil.collections.nullIfEmpty
 import xerus.ktutil.containsAny
-import xerus.ktutil.findFolder
+import xerus.ktutil.containsEach
+import xerus.ktutil.findExistingDirectory
 import xerus.ktutil.javafx.MenuItem
 import xerus.ktutil.javafx.TableColumn
 import xerus.ktutil.javafx.bind
@@ -22,11 +23,11 @@ import xerus.ktutil.javafx.grow
 import xerus.ktutil.javafx.onClick
 import xerus.ktutil.javafx.properties.SimpleObservable
 import xerus.ktutil.javafx.properties.addListener
-import xerus.ktutil.javafx.properties.listen
 import xerus.ktutil.javafx.selectedItem
 import xerus.ktutil.javafx.ui.App
 import xerus.ktutil.javafx.ui.createAlert
-import xerus.ktutil.nullIfEmpty
+import xerus.ktutil.javafx.ui.onConfirm
+import xerus.ktutil.javafx.ui.resize
 import xerus.music.mixxx.data.Track
 import xerus.music.mixxx.data.TrackLocation
 import java.io.File
@@ -57,7 +58,7 @@ object MixxxFileMover {
 			var found = false
 			var cueAmount: Int? = null
 			var bpmLock: Boolean? = null
-			cues.forEach { track, cues ->
+			cues.forEach { (track, cues) ->
 				if(track.location == loc.id) {
 					found = true
 					cueAmount = cues.size
@@ -78,7 +79,6 @@ object MixxxFileMover {
 	
 	fun start() {
 		App.launch("Mixxx Mover") {
-			
 			val locPredicate = SimpleObservable<Predicate<LocTrack>>(Predicate { true })
 			val predicate = SimpleObservable<Predicate<Track>>(Predicate { true })
 			val locationTable = TableView(locTracks).filtered(locPredicate)
@@ -89,6 +89,29 @@ object MixxxFileMover {
 			locationTable.contextMenu = ContextMenu(
 				MenuItem("Choose new location") {
 					chooseNewLocation(locationTable.selectedItem ?: return@MenuItem)
+				},
+				MenuItem("Auto-detect new location") {
+					@Suppress("UNCHECKED_CAST")
+					val selected = locationTable.selectionModel.selectedItems
+					val results: List<Pair<LocTrack, File>>? = selected?.mapNotNull { track ->
+						val name = track.location.nameWithoutExtension
+						val ext = track.location.extension
+						val parent = File(track.loc.directory)
+						val match = { file: File -> file.isFile && file.extension == ext && file.nameWithoutExtension.containsEach(name) }
+						(parent.listFiles(match)?.firstOrNull()
+							?: parent.parentFile.walkBottomUp().find(match)
+							)?.let { Pair(track, it) }
+					}?.nullIfEmpty()
+					logger.debug("Found $results")
+					App.stage.createAlert(Alert.AlertType.CONFIRMATION, "Confirm moves (${results?.size}/${selected.size})", null,
+						results?.joinToString("\n") { "${it.first.loc.filename} to ${it.second}" }
+							?: "Nothing found!", ButtonType.OK, ButtonType.NO)
+						.resize(900.0)
+						.onConfirm {
+							results?.forEach {
+								tryLocationUpdate(it.first, it.second)
+							}
+						}
 				},
 				MenuItem("Delete") {
 					val toDelete = locationTable.selectionModel.selectedItems?.map { it.loc.id } ?: return@MenuItem
@@ -194,7 +217,7 @@ object MixxxFileMover {
 	fun chooseNewLocation(selected: LocTrack) {
 		val newLocation = FileChooser().apply {
 			title = "Choose new location"
-			initialDirectory = File(selected.loc.directory).findFolder()
+			initialDirectory = File(selected.loc.directory).findExistingDirectory()
 		}.showOpenDialog(App.stage) ?: return
 		tryLocationUpdate(selected, newLocation)
 	}
@@ -205,21 +228,18 @@ object MixxxFileMover {
 			updateDatabase()
 		} catch(e: Exception) {
 			if(e.message?.contains("SQLITE_CONSTRAINT_UNIQUE") == true)
-				App.stage.createAlert(Alert.AlertType.WARNING, title = "Relocation error", header = "A track with this location already exists",
-					content = "Would you like to override it? Cues: ${selected.cues} Other: ${locTracks.find { it.location == newLocation }?.cues}", buttons = *arrayOf(ButtonType.YES, ButtonType.NO)).apply {
-					showAndWait()
-					resultProperty().listen {
-						if(it == ButtonType.YES) {
-							val locs = MixxxDB.getTrackLocations("location = \"$newLocation\"").map {
-								println(it)
-								it
-							}
-							MixxxDB.deleteFrom("track_locations", "location = \"$newLocation\"")
-							MixxxDB.deleteFrom("library", "location IN ${locs.map { it.id }.joinToString(",", "(", ")")}")
-							tryLocationUpdate(selected, newLocation)
+				App.stage.createAlert(Alert.AlertType.WARNING, "Relocation error", "A track with this location already exists",
+					"Would you like to override it? Cues: ${selected.cues} Other: ${locTracks.find { it.location == newLocation }?.cues}",
+					ButtonType.YES, ButtonType.NO)
+					.onConfirm {
+						val locs = MixxxDB.getTrackLocations("location = \"$newLocation\"").map {
+							logger.debug("Moving $it")
+							it
 						}
+						MixxxDB.deleteFrom("track_locations", "location = \"$newLocation\"")
+						MixxxDB.deleteFrom("library", "location IN ${locs.map { it.id }.joinToString(",", "(", ")")}")
+						tryLocationUpdate(selected, newLocation)
 					}
-				}
 			else
 				App.stage.createAlert(Alert.AlertType.ERROR, title = "Relocation error", content = e.toString(), buttons = *arrayOf(ButtonType.OK)).show()
 		}
