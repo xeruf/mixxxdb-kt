@@ -1,5 +1,6 @@
 package xerus.music.mixxx
 
+import ch.qos.logback.classic.Level
 import javafx.beans.value.ObservableValue
 import javafx.collections.FXCollections
 import javafx.collections.ObservableList
@@ -10,7 +11,6 @@ import javafx.scene.control.*
 import javafx.scene.layout.*
 import javafx.scene.paint.Paint
 import javafx.stage.FileChooser
-import mu.KotlinLogging
 import xerus.ktutil.collections.nullIfEmpty
 import xerus.ktutil.containsAny
 import xerus.ktutil.findFolder
@@ -33,12 +33,16 @@ import java.io.File
 import java.util.function.Predicate
 
 fun main(args: Array<String>) {
+	args.indexOf("--loglevel").takeIf { it > -1 }?.let {
+		logLevel = args.getOrNull(it + 1)?.let { Level.toLevel(it, null) } ?: run {
+			println("WARNING: Loglevel argument given without a valid value! Use one of {OFF, ERROR, WARN, INFO, DEBUG, TRACE, ALL}")
+			return@let
+		}
+	}
 	MixxxDB.connect()
 	MixxxFileMover.updateDatabase()
 	MixxxFileMover.start()
 }
-
-private val logger = KotlinLogging.logger { }
 
 object MixxxFileMover {
 	
