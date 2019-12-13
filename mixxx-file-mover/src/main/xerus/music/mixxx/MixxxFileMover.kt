@@ -10,6 +10,7 @@ import javafx.scene.Scene
 import javafx.scene.control.*
 import javafx.scene.layout.*
 import javafx.scene.paint.Paint
+import javafx.stage.DirectoryChooser
 import javafx.stage.FileChooser
 import xerus.ktutil.collections.nullIfEmpty
 import xerus.ktutil.containsAny
@@ -44,6 +45,8 @@ fun main(args: Array<String>) {
 	MixxxFileMover.updateDatabase()
 	MixxxFileMover.start()
 }
+
+typealias FileMatcher = (File) -> Boolean
 
 object MixxxFileMover {
 	
@@ -90,29 +93,23 @@ object MixxxFileMover {
 				MenuItem("Choose new location") {
 					chooseNewLocation(locationTable.selectedItem ?: return@MenuItem)
 				},
-				MenuItem("Auto-detect new location") {
-					@Suppress("UNCHECKED_CAST")
-					val selected = locationTable.selectionModel.selectedItems
-					val results: List<Pair<LocTrack, File>>? = selected?.mapNotNull { track ->
-						val name = track.location.nameWithoutExtension
-						val ext = track.location.extension
-						val parent = File(track.loc.directory)
-						val match = { file: File -> file.isFile && file.extension == ext && file.nameWithoutExtension.containsEach(name) }
-						(parent.listFiles(match)?.firstOrNull()
-							?: parent.parentFile.walkBottomUp().find(match)
-							)?.let { Pair(track, it) }
-					}?.nullIfEmpty()
-					logger.debug("Found $results")
-					App.stage.createAlert(Alert.AlertType.CONFIRMATION, "Confirm moves (${results?.size}/${selected.size})", null,
-						results?.joinToString("\n") { "${it.first.loc.filename} to ${it.second}" }
-							?: "Nothing found!", ButtonType.OK, ButtonType.NO)
-						.resize(900.0)
-						.onConfirm {
-							results?.forEach {
-								tryLocationUpdate(it.first, it.second)
-							}
-						}
-				},
+				Menu("Auto-detect new location", null,
+					MenuItem("in current directory") {
+						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> origin.listFiles(matcher)?.firstOrNull() }
+					},
+					MenuItem("in current tree") {
+						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> origin.walkTopDown().find(matcher) }
+					},
+					MenuItem("in parent tree") {
+						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> origin.parentFile.walkTopDown().find(matcher) }
+					},
+					MenuItem("in ...") {
+						val dir = DirectoryChooser().apply {
+							initialDirectory = locationTable.selectedItem?.location?.findExistingDirectory()
+						}.showDialog(App.stage)
+						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> dir.walkTopDown().find(matcher) }
+					}
+				),
 				MenuItem("Delete") {
 					val toDelete = locationTable.selectionModel.selectedItems?.map { it.loc.id } ?: return@MenuItem
 					delete(toDelete)
@@ -245,6 +242,29 @@ object MixxxFileMover {
 		}
 	}
 	
+	fun detectNewLocations(items: Collection<LocTrack>, match: (File) -> FileMatcher = ::createMatcher, walker: (File, (File) -> Boolean) -> File?) {
+		val results: List<Pair<LocTrack, File>>? = items.mapNotNull { track ->
+			val matchFile = match(track.location)
+			walker(File(track.loc.directory)) { it.isFile && matchFile(it) }
+				?.let { Pair(track, it) }
+		}.nullIfEmpty()
+		logger.debug("Found $results")
+		App.stage.createAlert(Alert.AlertType.CONFIRMATION, "Confirm moves (${results?.size}/${items.size})", null,
+			results?.joinToString("\n") { "${it.first.loc.filename} to ${it.second}" }
+				?: "Nothing found!", ButtonType.OK, ButtonType.NO)
+			.resize(900.0)
+			.onConfirm {
+				results?.forEach {
+					tryLocationUpdate(it.first, it.second)
+				}
+			}
+	}
+	
+	fun createMatcher(original: File): FileMatcher {
+		val name = original.nameWithoutExtension
+		val ext = original.extension
+		return { file: File -> file.extension == ext && file.nameWithoutExtension.containsEach(name) }
+	}
 }
 
 data class LocTrack(val loc: TrackLocation, val cues: Int?, val bpmLock: Boolean?) {
