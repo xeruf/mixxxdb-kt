@@ -27,7 +27,7 @@ sourceSets {
 
 dependencies {
 	api(kotlin("stdlib-jdk8"))
-	api("com.github.Xerus2000.util", "javafx", "6b028e2")
+	api("com.github.Xerus2000.util", "javafx", "15029b0")
 	
 	compile("org.xerial", "sqlite-jdbc", "3.25.2")
 }
