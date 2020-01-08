@@ -131,8 +131,11 @@ object MixxxFileMover {
 					chooseNewLocation(locationTable.selectedItem ?: return@MenuItem)
 				},
 				Menu("Auto-detect new location", null,
-					MenuItem("in current directory") {
-						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> origin.listFiles()?.maxBy(matcher) }
+					MenuItem("in current directory (rough)") {
+						detectNewLocations(locationTable.selectionModel.selectedItems, { original ->
+							val list = original.nameWithoutExtension.splitTitleTrimmed()
+							return@detectNewLocations { file: File -> calculateSimilarity(list, file.nameWithoutExtension.splitTitleTrimmed()) }
+						}) { origin, matcher -> origin.listFiles()?.maxBy(matcher) }
 					},
 					MenuItem("in current tree") {
 						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> origin.walkTopDown().maxBy(matcher) }
@@ -152,7 +155,7 @@ object MixxxFileMover {
 						}.showDialog(App.stage)
 						detectNewLocations(locationTable.selectionModel.selectedItems, { original ->
 							val list = original.nameWithoutExtension.splitTitleTrimmed()
-							return@detectNewLocations { file: File -> findSimilarity(list, file.nameWithoutExtension.splitTitleTrimmed())}
+							return@detectNewLocations { file: File -> calculateSimilarity(list, file.nameWithoutExtension.splitTitleTrimmed()) }
 						}) { origin, matcher -> dir.walkTopDown().maxBy(matcher) }
 					}
 				),
