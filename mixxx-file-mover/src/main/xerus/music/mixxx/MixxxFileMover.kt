@@ -236,33 +236,39 @@ object MixxxFileMover {
 			updateLocation(selected.loc.id, newLocation)
 			updateDatabase()
 		} catch(e: Exception) {
-			if(e.message?.contains("SQLITE_CONSTRAINT_UNIQUE") == true)
-				App.stage.createAlert(Alert.AlertType.WARNING, "Relocation error", "A track with this location already exists",
-					"Would you like to override it? Cues: ${selected.cues} Other: ${locTracks.find { it.location == newLocation }?.cues}",
-					ButtonType.YES, ButtonType.NO)
-					.onConfirm {
-						val locs = MixxxDB.getTrackLocations("location = \"$newLocation\"").map {
-							logger.debug("Moving $it")
-							it
-						}
-						MixxxDB.deleteFrom("track_locations", "location = \"$newLocation\"")
-						MixxxDB.deleteFrom("library", "location IN ${locs.map { it.id }.joinToString(",", "(", ")")}")
-						tryLocationUpdate(selected, newLocation)
-					}
-			else
+			if(e.message?.contains("SQLITE_CONSTRAINT_UNIQUE") == true) {
+				val other = locTracks.find { it.location == newLocation }
+				if(other != null && other.cues == 0 && other.bpmLock == false)
+					retryLocationUpdate(selected, newLocation)
+				else
+					App.stage.createAlert(Alert.AlertType.WARNING, "Relocation error", "A track with this location already exists",
+						"Would you like to override it? Cues: ${selected.cues} Other: ${other?.cues}",
+						ButtonType.YES, ButtonType.NO)
+						.onConfirm { retryLocationUpdate(selected, newLocation) }
+			} else {
 				App.stage.createAlert(Alert.AlertType.ERROR, title = "Relocation error", content = e.toString(), buttons = *arrayOf(ButtonType.OK)).show()
+			}
 		}
+	}
+	
+	private fun retryLocationUpdate(selected: LocTrack, newLocation: File) {
+		val locs = MixxxDB.getTrackLocations("location = \"$newLocation\"").map {
+			logger.debug("Moving $it and deleting conflicting entries")
+			it
+		}
+		MixxxDB.deleteFrom("track_locations", "location = \"$newLocation\"")
+		MixxxDB.deleteFrom("library", locs.map { it.id }.sqlFilter("location"))
+		tryLocationUpdate(selected, newLocation)
 	}
 	
 	fun detectNewLocations(items: Collection<LocTrack>, match: (File) -> FileMatcher = ::createMatcher, walker: (File, (File) -> Double) -> File?) {
 		val results: List<Pair<LocTrack, File>>? = items.mapNotNull { track ->
 			val matchFile = match(track.location)
-			walker(File(track.loc.directory)) { if(it.isFile) matchFile(it) else 0.0 }
+			walker(File(track.loc.directory)) { if(it.isFile) matchFile(it) else Double.MIN_VALUE }
 				?.let { Pair(track, it) }
 		}.nullIfEmpty()
-		logger.debug("Found $results")
 		App.stage.createAlert(Alert.AlertType.CONFIRMATION, "Confirm moves (${results?.size}/${items.size})", null,
-			results?.joinToString("\n") { "${it.first.loc.filename} to ${it.second}" }
+			results?.joinToString("\n") { "${it.first.loc.filename} to ${it.second.relativeTo(it.first.location.parentFile)}" }
 				?: "Nothing found!", ButtonType.OK, ButtonType.NO)
 			.resize(900.0)
 			.onConfirm {
