@@ -16,22 +16,18 @@ import xerus.ktutil.collections.nullIfEmpty
 import xerus.ktutil.containsAny
 import xerus.ktutil.containsEach
 import xerus.ktutil.findExistingDirectory
-import xerus.ktutil.findSimilarity
-import xerus.ktutil.javafx.MenuItem
-import xerus.ktutil.javafx.TableColumn
-import xerus.ktutil.javafx.bind
-import xerus.ktutil.javafx.bindText
-import xerus.ktutil.javafx.grow
-import xerus.ktutil.javafx.onClick
+import xerus.ktutil.calculateSimilarity
+import xerus.ktutil.helpers.Named
+import xerus.ktutil.javafx.*
+import xerus.ktutil.javafx.properties.ImmutableObservableList
 import xerus.ktutil.javafx.properties.SimpleObservable
 import xerus.ktutil.javafx.properties.addListener
-import xerus.ktutil.javafx.selectedItem
+import xerus.ktutil.javafx.properties.listen
 import xerus.ktutil.javafx.ui.App
 import xerus.ktutil.javafx.ui.createAlert
 import xerus.ktutil.javafx.ui.onConfirm
 import xerus.ktutil.javafx.ui.resize
 import xerus.ktutil.splitTitleTrimmed
-import xerus.ktutil.toInt
 import xerus.music.mixxx.data.Track
 import xerus.music.mixxx.data.TrackLocation
 import java.io.File
@@ -85,8 +81,46 @@ object MixxxFileMover {
 	
 	fun start() {
 		App.launch("Mixxx Mover") {
+			val locPredicates = FXCollections.observableArrayList<Predicate<LocTrack>>(Predicate { true })
+			val predicates = FXCollections.observableArrayList<Predicate<Track>>(Predicate { true })
+			
+			val findField = TextField().bindText(Settings.FIND)
+			val replaceButton = Button("Replace All")
+			val replaceRow = HBox(
+				Label("Find"), findField,
+				Label("Replace by"), TextField().bindText(Settings.REPLACE),
+				CheckBox("Case-sensitive").bind(Settings.CASESENSITIVE),
+				replaceButton,
+				Button("Reload").onClick { updateDatabase() },
+				ComboBox<Filter>(ImmutableObservableList(*Filter.values())).apply {
+					this.selectionModel.selectedItemProperty().addListener { _, old, new ->
+						predicates.remove(old?.filterTrack)
+						locPredicates.remove(old?.filterLoc)
+						predicates.add(new.filterTrack)
+						locPredicates.add(new.filterLoc)
+					}
+				}
+			)
+			
+			arrayOf(Settings.FIND, Settings.CASESENSITIVE).addListener(true) {
+				val search = Settings.FIND()
+				val error = try {
+					val regex = searchRegex()
+					locPredicates[0] = Predicate { track -> track.loc.location.contains(regex) }
+					predicates[0] = Predicate { track -> arrayOf(track.artist, track.albumArtist, track.title, track.album).joinToString(" - ") { it.orEmpty() }.contains(regex) }
+					false
+				} catch(t: Throwable) {
+					true
+				}
+				findField.border = Border(BorderStroke(Paint.valueOf(if(error) "red" else "#00000000"), BorderStrokeStyle.SOLID, CornerRadii(4.0), BorderWidths.DEFAULT))
+				replaceButton.isDisable = search.isEmpty() || error
+			}
+			
 			val locPredicate = SimpleObservable<Predicate<LocTrack>>(Predicate { true })
+			locPredicates.listen { locPredicate.value = it.reduce { acc, predicate -> acc.and(predicate) } }
 			val predicate = SimpleObservable<Predicate<Track>>(Predicate { true })
+			predicates.listen { predicate.value = it.reduce { acc, predicate -> acc.and(predicate) } }
+			
 			val locationTable = TableView(locTracks).filtered(locPredicate)
 			locationTable.columnsFromProperties { it.loc }
 			locationTable.columns.add(TableColumn<LocTrack, Int?>("Cues") { it.value.cues })
@@ -178,43 +212,9 @@ object MixxxFileMover {
 				Tab(pair.first, StackPane(pair.second))
 			}.toTypedArray()
 			
-			val findField = TextField().bindText(Settings.FIND)
-			val replaceButton = Button("Replace All")
 			replaceButton.setOnAction {
 				replace(locationTable.selectionModel.selectedItems.nullIfEmpty() ?: locationTable.items)
 				updateDatabase()
-			}
-			val replaceRow = HBox(Label("Find"), findField,
-				Label("Replace by"), TextField().bindText(Settings.REPLACE),
-				CheckBox("Case-sensitive").bind(Settings.CASESENSITIVE),
-				replaceButton,
-				Button("Reload").onClick { updateDatabase() }
-			)
-			
-			arrayOf(Settings.FIND, Settings.CASESENSITIVE).addListener(true) {
-				val search = Settings.FIND()
-				val error = try {
-					when(search) {
-						"IS:DUPLICATE" -> {
-							locPredicate.value = Predicate { track -> locTracks.filter { it.location == track.location }.size > 1 }
-							predicate.value = Predicate { track -> library.filter { it.artist == track.artist && it.title == track.title && it.album == track.album }.size > 1 }
-						}
-						"IS:LOCATIONDUPLICATE" -> {
-							predicate.value = Predicate { track -> library.filter { it.location == track.location }.size > 1 }
-							locPredicate.value = Predicate { track -> track.loc.location.contains(searchRegex()) }
-						}
-						else -> {
-							val regex = searchRegex()
-							locPredicate.value = Predicate { track -> track.loc.location.contains(regex) }
-							predicate.value = Predicate { track -> arrayOf(track.artist, track.albumArtist, track.title, track.album).joinToString(" - ") { it.orEmpty() }.contains(regex) }
-						}
-					}
-					false
-				} catch(t: Throwable) {
-					true
-				}
-				findField.border = Border(BorderStroke(Paint.valueOf(if(error) "red" else "#00000000"), BorderStrokeStyle.SOLID, CornerRadii(4.0), BorderWidths.DEFAULT))
-				replaceButton.isDisable = search.isEmpty() || error
 			}
 			
 			val tabPane = TabPane(*tabs)
@@ -281,6 +281,16 @@ object MixxxFileMover {
 
 data class LocTrack(val loc: TrackLocation, val cues: Int?, val bpmLock: Boolean?) {
 	val location = File(loc.location)
+}
+
+enum class Filter(val filterTrack: Predicate<Track>, val filterLoc: Predicate<LocTrack>): Named {
+	None(Predicate { true }, Predicate { true }),
+	Duplicate(Predicate { track -> MixxxFileMover.library.filter { it.artist == track.artist && it.title == track.title && it.album == track.album }.size > 1 }, Predicate { track -> MixxxFileMover.locTracks.filter { it.location == track.location }.size > 1 }),
+	LocationDuplicate(Predicate { track -> MixxxFileMover.library.filter { it.location == track.location }.size > 1 }, Predicate { track -> MixxxFileMover.locTracks.filter { it.location == track.location }.size > 1 }),
+	Missing(Predicate { it.mixxx_deleted }, Predicate { it.loc.fsDeleted == 1L }) ;
+	
+	override val displayName: String
+		get() = name
 }
 
 private fun updateLocation(id: Long, newLocation: File) {
