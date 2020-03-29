@@ -1,7 +1,7 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-	kotlin("jvm") version "1.3.61"
+	kotlin("jvm") version "1.3.71"
 	`java-library`
 	id("com.github.ben-manes.versions") version "0.27.0"
 }
@@ -27,8 +27,8 @@ sourceSets {
 }
 
 dependencies {
-	api(kotlin("stdlib-jdk8"))
-	api("com.github.Xerus2000.util", "javafx", "a0831c8")
+	api(kotlin("stdlib"))
+	api("com.github.Xerus2000.util", "javafx", "2f67fc2")
 	
 	implementation("org.xerial", "sqlite-jdbc", "3.30.1")
 }
