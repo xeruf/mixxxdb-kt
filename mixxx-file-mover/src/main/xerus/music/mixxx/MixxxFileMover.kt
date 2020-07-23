@@ -39,6 +39,7 @@ fun main(args: Array<String>) {
 			println("WARNING: Loglevel argument given without a valid value! Use one of {OFF, ERROR, WARN, INFO, DEBUG, TRACE, ALL}")
 			return@let
 		}
+		logger.debug("Loglevel override: $logLevel")
 	}
 	MixxxDB.connect()
 	MixxxFileMover.updateDatabase()

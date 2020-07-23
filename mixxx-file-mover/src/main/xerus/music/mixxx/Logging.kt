@@ -11,7 +11,7 @@ import ch.qos.logback.core.ConsoleAppender
 import ch.qos.logback.core.spi.ContextAwareBase
 import mu.KotlinLogging
 
-var logLevel = Level.TRACE
+var logLevel: Level = Level.DEBUG
 
 val logger = KotlinLogging.logger { }
 
