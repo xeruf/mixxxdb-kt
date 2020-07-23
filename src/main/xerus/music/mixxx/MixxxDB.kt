@@ -8,8 +8,6 @@ import java.sql.DriverManager
 import java.sql.ResultSet
 import java.text.SimpleDateFormat
 
-
-
 /**
  * An object to conveniently and typesafely access the mixxxdb.
  *

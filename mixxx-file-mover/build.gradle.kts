@@ -27,6 +27,12 @@ application {
 	mainClassName = "xerus.music.mixxx.MixxxFileMoverKt"
 }
 
-tasks.withType<KotlinCompile> {
-	kotlinOptions.jvmTarget = "1.8"
+tasks {
+	run.configure {
+		args = System.getProperty("args", "").split(" ")
+	}
+	
+	withType<KotlinCompile> {
+		kotlinOptions.jvmTarget = "1.8"
+	}
 }
