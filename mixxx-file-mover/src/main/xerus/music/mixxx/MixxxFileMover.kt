@@ -12,11 +12,11 @@ import javafx.scene.layout.*
 import javafx.scene.paint.Paint
 import javafx.stage.DirectoryChooser
 import javafx.stage.FileChooser
+import xerus.ktutil.calculateSimilarity
 import xerus.ktutil.collections.nullIfEmpty
 import xerus.ktutil.containsAny
 import xerus.ktutil.containsEach
 import xerus.ktutil.findExistingDirectory
-import xerus.ktutil.calculateSimilarity
 import xerus.ktutil.helpers.Named
 import xerus.ktutil.javafx.*
 import xerus.ktutil.javafx.properties.ImmutableObservableList
@@ -132,32 +132,26 @@ object MixxxFileMover {
 					chooseNewLocation(locationTable.selectedItem ?: return@MenuItem)
 				},
 				Menu("Auto-detect new location", null,
-					MenuItem("in current directory (rough)") {
-						detectNewLocations(locationTable.selectionModel.selectedItems, { original ->
-							val list = original.nameWithoutExtension.splitTitleTrimmed()
-							return@detectNewLocations { file: File -> calculateSimilarity(list, file.nameWithoutExtension.splitTitleTrimmed()) }
-						}) { origin, matcher -> origin.listFiles()?.maxBy(matcher) }
+					MenuItem("in previous directory (rough matching)") {
+						detectNewLocations(locationTable.selectionModel.selectedItems, ::createRoughMatcher) { origin, matcher -> origin.listFiles()?.maxBy(matcher) }
 					},
-					MenuItem("in current tree") {
+					MenuItem("in previous directory tree") {
 						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> origin.walkTopDown().maxBy(matcher) }
 					},
-					MenuItem("in parent tree") {
+					MenuItem("in parent directory tree") {
 						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> origin.parentFile.walkTopDown().maxBy(matcher) }
 					},
-					MenuItem("in ...") {
+					MenuItem("select search location") {
 						val dir = DirectoryChooser().apply {
 							initialDirectory = locationTable.selectedItem?.location?.findExistingDirectory()
 						}.showDialog(App.stage)
 						detectNewLocations(locationTable.selectionModel.selectedItems) { origin, matcher -> dir.walkTopDown().maxBy(matcher) }
 					},
-					MenuItem("in ... (rough)") {
+					MenuItem("select search location (rough matching)") {
 						val dir = DirectoryChooser().apply {
 							initialDirectory = locationTable.selectedItem?.location?.findExistingDirectory()
 						}.showDialog(App.stage)
-						detectNewLocations(locationTable.selectionModel.selectedItems, { original ->
-							val list = original.nameWithoutExtension.splitTitleTrimmed()
-							return@detectNewLocations { file: File -> calculateSimilarity(list, file.nameWithoutExtension.splitTitleTrimmed()) }
-						}) { origin, matcher -> dir.walkTopDown().maxBy(matcher) }
+						detectNewLocations(locationTable.selectionModel.selectedItems, ::createRoughMatcher) { origin, matcher -> dir.walkTopDown().maxBy(matcher) }
 					}
 				),
 				MenuItem("Delete") {
@@ -268,9 +262,9 @@ object MixxxFileMover {
 	fun detectNewLocations(items: Collection<LocTrack>, match: (File) -> FileMatcher = ::createMatcher, walker: (File, (File) -> Double) -> File?) {
 		val results: List<Pair<LocTrack, File>>? = items.mapNotNull { track ->
 			val matchFile = match(track.location)
-			walker(File(track.loc.directory)) { if(it.isFile) matchFile(it) else Double.MIN_VALUE }
+			walker(File(track.loc.directory).findExistingDirectory()) { if(it.isFile) matchFile(it) else Double.MIN_VALUE }
 				?.let { Pair(track, it) }
-		}.nullIfEmpty()
+		}.filterNot { it.second.isDirectory }.nullIfEmpty()
 		App.stage.createAlert(Alert.AlertType.CONFIRMATION, "Confirm moves (${results?.size}/${items.size})", null,
 			results?.joinToString("\n") { "${it.first.loc.filename} to ${it.second.relativeTo(it.first.location.parentFile)}" }
 				?: "Nothing found!", ButtonType.OK, ButtonType.NO)
@@ -287,6 +281,19 @@ object MixxxFileMover {
 		val ext = original.extension
 		return { file: File -> if(file.extension == ext && file.nameWithoutExtension.containsEach(name)) 1.0 else 0.0 }
 	}
+	
+	fun createRoughMatcher(original: File): FileMatcher {
+		val origName = original.nameWithoutExtension
+		val origSplit = original.nameWithoutExtension.splitTitleTrimmed()
+		return { file: File ->
+			val fileName = file.nameWithoutExtension
+			val calc = calculateSimilarity(origSplit, fileName.splitTitleTrimmed())
+			val suffix = origName.commonSuffixWith(fileName, true).length.toDouble() / (origName.length + fileName.length )
+			logger.trace { "Similarity of $origName and $fileName: $calc $suffix" }
+			calc + suffix
+		}
+	}
+	
 }
 
 data class LocTrack(val loc: TrackLocation, val cues: Int?, val bpmLock: Boolean?) {
@@ -297,7 +304,7 @@ enum class Filter(val filterTrack: Predicate<Track>, val filterLoc: Predicate<Lo
 	None(Predicate { true }, Predicate { true }),
 	Duplicate(Predicate { track -> MixxxFileMover.library.filter { it.artist == track.artist && it.title == track.title && it.album == track.album }.size > 1 }, Predicate { track -> MixxxFileMover.locTracks.filter { it.location == track.location }.size > 1 }),
 	LocationDuplicate(Predicate { track -> MixxxFileMover.library.filter { it.location == track.location }.size > 1 }, Predicate { track -> MixxxFileMover.locTracks.filter { it.location == track.location }.size > 1 }),
-	Missing(Predicate { it.mixxx_deleted }, Predicate { it.loc.fsDeleted == 1L }) ;
+	Missing(Predicate { it.mixxx_deleted }, Predicate { it.loc.fsDeleted == 1L });
 	
 	override val displayName: String
 		get() = name
