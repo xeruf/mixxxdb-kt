@@ -326,13 +326,17 @@ private fun delete(ids: Collection<Long>, table: String = "track_locations") {
 
 private fun searchRegex() = Regex(Settings.FIND(), if(Settings.CASESENSITIVE()) setOf() else setOf(RegexOption.IGNORE_CASE))
 
+/** Executes the replacement action for the given items. */
 private fun replace(list: List<LocTrack>) =
 	update(list) { File(it.toString().replace(searchRegex(), Settings.REPLACE())) }
 
 private fun update(list: List<LocTrack>, update: (File) -> File) {
+	// TODO add progress indicator
 	list.forEach { track -> updateLocation(track.loc.id, update(track.location)) }
 }
 
+/** Adds the given filter while preserving sorting.
+ * @return this */
 fun <T> TableView<T>.filtered(filter: ObservableValue<Predicate<T>>): TableView<T> {
 	val filtered = FilteredList(this.items)
 	filtered.predicateProperty().bind(filter)
